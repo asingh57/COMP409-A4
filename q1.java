@@ -1,4 +1,4 @@
-public class q1{
+public class q1{ 
   
   //we assume a board of size 100x100 and a point is 1 unit
   //so an object becomes 5x5
@@ -9,8 +9,11 @@ public class q1{
     float ft= Float.parseFloat(args[3])*100;
     edge_create.edge_radius=(int) ft;
     obstacle_create.create_all(thread_count);
+    tile.print_board();
+    System.out.println("*************");
+    edge_create.do_edge_creation(thread_count);
     
-    
+    System.out.println("*************");
     tile.print_board();
   }
   

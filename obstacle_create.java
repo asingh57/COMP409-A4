@@ -1,8 +1,8 @@
 public class obstacle_create implements Runnable{
   static int obstacle_x=5;//dimensions of the obstacle
   static int obstacle_y=5;
-  static int obstacles_created=0;
-   
+  static int obstacles_created=0; 
+  static int obstacle_count=20;
   static void create_all(int thread_count){
     
 
@@ -25,7 +25,7 @@ public class obstacle_create implements Runnable{
   }
   
   static synchronized boolean obtain_obstacle(){
-    if(obstacles_created<obstacle.count){
+    if(obstacles_created<obstacle_count){
       obstacles_created+=1;
       return true;
     }
