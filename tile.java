@@ -26,10 +26,10 @@ import java.util.Random;
     System.out.println();
   }
   
-  static int max_x=board_size_x-piece.obstacle_width-1;//make sure obstacle is not placed at the edge
-  static int min_x=2;
-  static int max_y=board_size_y-piece.obstacle_height-1;
-  static int min_y=2;
+  static int max_x=board_size_x-piece.obstacle_width-2;//make sure obstacle is not placed at the edge
+  static int min_x=3;
+  static int max_y=board_size_y-piece.obstacle_height-2;
+  static int min_y=3;
   
   static void generate_obstacle(){
     Random rand = new Random();
@@ -58,6 +58,8 @@ import java.util.Random;
     int to_x= from_x+radius*dir_x;
     int to_y= from_y+radius*dir_y;
 
+    int[] reserve_dir_x={-dir_y,dir_y};
+    int[] reserve_dir_y={dir_x,-dir_x};
       
     
     
@@ -85,25 +87,41 @@ import java.util.Random;
     boolean fail=false;
     
     
-    
+    int [] empty= {};
     while(!(curr_x==to_x+dir_x&&curr_y==to_y+dir_y)){
-      if(!board[curr_x][curr_y].reserve_tile()){
+      if((
+            (curr_x==from_x&&curr_y==from_y)
+            ||(curr_x==from_x+dir_x&&curr_y==from_y+dir_y)
+            ||(curr_x==to_x&&curr_y==to_y)
+            ||(curr_x==to_x-dir_x&&curr_y==to_y-dir_y)
+            ||(curr_x==to_x+dir_x&&curr_y==to_y+dir_y)
+          ) ){
+            if((!board[curr_x][curr_y].reserve_tile(empty,empty))){
+              fail=true;
+              System.out.println("FAILED AT vertex/point next to vertex");
+              System.out.println(curr_x);
+        System.out.println(curr_y);
+              break;
+            }
+      }
+      else if(!board[curr_x][curr_y].reserve_tile(reserve_dir_x,reserve_dir_y)){
         //fail if tile is already reserved or if that tile has a vertex that will exceed edge count if this edge is created
         fail=true;
+        System.out.println("FAILED elsewhere");
+        System.out.println(curr_x);
+        System.out.println(curr_y);
         if(dir_x!=0&&dir_y!=0){
           //System.out.println("found reserved tile at ");
-          //System.out.println(curr_x);
-          //System.out.println(curr_y);
         }
         
         break;
       }
       curr_x+=dir_x;
       curr_y+=dir_y;
-    } 
+    }
     
     //now check if there is an object at the next tile, if there is, the player won't ve able to walk between the two walls and our edge generation fails
-    if(!board[curr_x][curr_y].reserve_tile()){
+    if(!board[curr_x][curr_y].reserve_tile(empty,empty)){
       fail=true;
       //System.out.println("no gap tile");
       //System.out.println(from_x);
@@ -115,7 +133,7 @@ import java.util.Random;
       //we will make permanently block this 1 unit space so the player can actually walk through
       board[curr_x][curr_y].piece_at_position= new piece(false);
       board[curr_x][curr_y].piece_at_position.change_symbol(" ");//make this whitespace so player can walk through
-      board[curr_x][curr_y].unreserve_tile();
+      board[curr_x][curr_y].unreserve_tile(reserve_dir_x,reserve_dir_y);
       //System.out.println("One block reserved for movement");
       //System.out.println(curr_x);
       //System.out.println(curr_y);
@@ -129,7 +147,21 @@ import java.util.Random;
         return false;
       }
       for(curr_x-=dir_x,curr_y-=dir_y;!(curr_x==from_x-dir_x&&curr_y==from_y-dir_y);curr_x-=dir_x,curr_y-=dir_y){
-        board[curr_x][curr_y].unreserve_tile();
+        if(
+          (
+            (curr_x==from_x&&curr_y==from_y)
+            ||(curr_x==from_x+dir_x&&curr_y==from_y+dir_y)
+            ||(curr_x==to_x&&curr_y==to_y)
+            ||(curr_x==to_x-dir_x&&curr_y==to_y-dir_y)
+            ||(curr_x==to_x+dir_x&&curr_y==to_y+dir_y) 
+          )        
+        ){
+          board[curr_x][curr_y].unreserve_tile(empty,empty);          
+        }
+        else{
+          board[curr_x][curr_y].unreserve_tile(reserve_dir_x,reserve_dir_y);
+        }
+        
         //unreserve tile
       }
       //System.out.println("failed");
@@ -170,7 +202,7 @@ import java.util.Random;
             edge_create.modify_stack(stackvals,true);
           }
         }
-        board[curr_x][curr_y].unreserve_tile();
+        board[curr_x][curr_y].unreserve_tile(reserve_dir_x,reserve_dir_y);
       }
     }
     
@@ -199,7 +231,7 @@ import java.util.Random;
   }
   
   
-  boolean reserve_tile(){
+  boolean reserve_tile(int[] reserve_dir_x, int[] reserve_dir_y){
     
     if(!((this.piece_at_position!=null&&this.piece_at_position.type=="piece"&&this.piece_at_position.is_vertex)||this.piece_at_position==null||this.piece_at_position.type==null)){//either another piece or an obstacle goes through this tile
       //System.out.println("the following is not a vertex");
@@ -220,7 +252,39 @@ import java.util.Random;
     }
     
     if(this.isOccupied.compareAndSet(false,true)){
+      //System.out.println("reserved at ");
+      //System.out.println(this.tile_position_x);
+      //System.out.println(this.tile_position_y);
+      boolean ret=true;
+      for(int i=0; i<reserve_dir_x.length;i++){
+        try{
+          int[] empty={};
+          ret=board[this.tile_position_x+reserve_dir_x[i]][this.tile_position_y+reserve_dir_y[i]].reserve_tile(empty,empty);
+          if(!ret){
+            //reserve failed for adjacent pieces
+            for(;i>-1;i--){
+              try{
+                board[this.tile_position_x+reserve_dir_x[i]][this.tile_position_y+reserve_dir_y[i]].unreserve_tile(empty,empty);
+              }
+              catch(java.lang.ArrayIndexOutOfBoundsException ex){
+                
+              }
+            }
+            this.unreserve_tile(empty,empty);
+            return false;
+          }
+        }
+        catch(java.lang.ArrayIndexOutOfBoundsException ex){
+          //do nothing
+        }
+      }
+      
       return true;
+    }
+    else{
+      System.out.println("reserve failed at ");
+      System.out.println(this.tile_position_x);
+      System.out.println(this.tile_position_y);
     }
     //System.out.println("set failed");          
           //System.out.println(this.tile_position_x);
@@ -228,8 +292,17 @@ import java.util.Random;
     return false;
   }
   
-  void unreserve_tile(){
+  void unreserve_tile(int[] reserve_dir_x, int[] reserve_dir_y){
+    int[] empty={};
     this.isOccupied.set(false);
+    for(int i=0;i<reserve_dir_x.length;i++){
+      try{
+        board[this.tile_position_x+reserve_dir_x[i]][this.tile_position_y+reserve_dir_y[i]].unreserve_tile(empty,empty);
+      }
+      catch(java.lang.ArrayIndexOutOfBoundsException ex){
+        
+      }
+    }
   }
   
   
