@@ -146,9 +146,7 @@ int main(int argc,char *argv[]) {
   int total_threads=optimistic_threads+1;
   omp_set_num_threads(total_threads);
   
-  struct char_state_association ***associations_list_by_thread[total_threads];
-  int association_chains_per_thread[total_threads];
-  int *associations_in_chain[total_threads];
+
   
   #pragma omp parallel for
     for (int i=0;i<total_threads;i++) {
@@ -180,41 +178,16 @@ int main(int argc,char *argv[]) {
         int ct=(int)(((end_char_index-start_char_index+1)/3))+2;
         struct char_state_association *associations[ct];
         int associations_received=get_state_spans(&start_state, input_str, start_char_index, end_char_index, associations);
-        struct char_state_association **associations_list[1];
-        associations_list[0]=associations;
-        associations_list_by_thread[i]=associations_list;
-        association_chains_per_thread[0]=0;
-        if(associations_received>0){
-          association_chains_per_thread[0]=1;
-          int ac[1];
-          ac[0]=associations_received;
-          associations_in_chain[0]=ac;
-        }
+        
         
       }
       else{
         int ct=(int)(((end_char_index-start_char_index+1)/3))+2;
-        struct char_state_association **associations_list[5];
-        
-        int count=0;
-        int ac[ct];
-        
         
         for(int l=0;l<5;l++){
           struct char_state_association *associations[ct];
           int associations_received=get_state_spans(state_list[l], input_str, start_char_index, end_char_index, associations);
-          if(associations_received>0){
-            ac[count]=associations_received;
-            associations_list[count++]=associations;
-          }
-        }
-        associations_list_by_thread[i]=associations_list; 
-        
-        association_chains_per_thread[i]=0;
-        if(count>0){
-          association_chains_per_thread[i]=count;
-          associations_in_chain[i]=ac;
-        }        
+        }     
       }
     }
   
@@ -224,53 +197,9 @@ int main(int argc,char *argv[]) {
     output_str[x]=' ';
   }
   
-  for(int i=0;i<total_threads;i++){
-    int start_char_index=(i*string_size)/total_threads;
-    int end_char_index=((i+1)*string_size)/total_threads;
-    if(i==total_threads-1){
-      int delta=string_size-end_char_index;
-      end_char_index+=delta;
-    }
-    if(prev_chosen_association<0&&association_chains_per_thread[i]>0){
-      //we'll simply pick the one with the start state as the initial state
-      //check if it is indeed start state
-      printf("choice a\n");
-      if(!((associations_list_by_thread[i][0][0]->state_start)==&start_state)){
-        continue;
-      }
-      
-      prev_chosen_association=0;
-      //now we do the appropriate additions in the string
-
-      for(int dfa_ct=0;dfa_ct<associations_in_chain[i][0];dfa_ct++){
-        for(int char_pos=associations_list_by_thread[i][0][associations_in_chain[i][0]]->position_start;char_pos<=associations_list_by_thread[i][0][associations_in_chain[i][0]]->position_end;char_pos++){
-          output_str[char_pos]=input_str[char_pos];
-        }        
-      }
-    }
-    else if(association_chains_per_thread[i]>0&&prev_chosen_association>=0){
-      printf("choice b\n");
-      //we see that if any one of our present dfas matches up with the ending of an old one
-      //if it does, we pick that
-      //else we pick the one with start state if it exists
-      //else we set previous association to -1
-    }
-    else if(association_chains_per_thread[i]==0&&prev_chosen_association>=0){
-      printf("choice c\n");
-      //we must delete the incomplete dfa matches from last our match (if eligible)
-      prev_chosen_association=-1;
-    }
-    else{
-      printf("choice d\n");
-      //neither last piece nor this one has any matches so replace everything with whitespace
-      prev_chosen_association=-1;
-    }
-    
-  }
     
   printf("%s\n",output_str);
     
-  printf("name of the start state now is %s\n",start_state.name);
   
 }
 
