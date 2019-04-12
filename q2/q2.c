@@ -23,6 +23,19 @@ struct char_state_association{
   struct state *state_end;
 };
 
+struct associations_chain{
+  int association_count;
+  struct char_state_association **association_array;  
+};
+
+struct associations_chains_per_index{
+  int index;
+  int chain_count;
+  struct associations_chain *association_chain_array;  
+};
+
+
+
 struct transition trans_top_left={ (int)'0', (int)'0', NULL };
 struct transition trans_bottom_left={ (int)'1', (int)'9', NULL };
 struct transition trans_bottom_left_self={ (int)'0', (int)'9', NULL };
@@ -146,7 +159,27 @@ int main(int argc,char *argv[]) {
   int total_threads=optimistic_threads+1;
   omp_set_num_threads(total_threads);
   
-
+  
+  int spaces_needed=0;
+  int is_working[total_threads];
+  for (int i=0;i<total_threads;i++) {
+      int start_char_index=(i*string_size)/total_threads;
+      int end_char_index=((i+1)*string_size)/total_threads;
+      if(i==total_threads-1){
+        int delta=string_size-end_char_index;
+        end_char_index+=delta;
+      }
+      if(start_char_index<end_char_index){        
+        is_working[i]=spaces_needed;
+        spaces_needed+=1;
+      }
+      else{
+        is_working[i]=-1;
+      }
+  }
+  
+  struct associations_chains_per_index mass_associations_chain_index[spaces_needed];
+  
   
   #pragma omp parallel for
     for (int i=0;i<total_threads;i++) {
@@ -175,20 +208,45 @@ int main(int argc,char *argv[]) {
       
       
       if(i==0){
-        int ct=(int)(((end_char_index-start_char_index+1)/3))+2;
+        
+        int ct=(int)(((end_char_index-start_char_index+1)/3))+2;        
+        
+        
         struct char_state_association *associations[ct];
         int associations_received=get_state_spans(&start_state, input_str, start_char_index, end_char_index, associations);
         
+        if(associations_received>0){
+          struct associations_chain ac={associations_received,associations};
+          mass_associations_chain_index[is_working[i]].chain_count=1;
+          struct associations_chain ac_arr[1];
+          ac_arr[0]=ac;
+          mass_associations_chain_index[is_working[i]].association_chain_array=ac_arr;  
+        }
+        else{
+          mass_associations_chain_index[is_working[i]].chain_count=0;
+        }
+        
+        
         
       }
-      else{
+      else if(is_working[i]>=0){
         int ct=(int)(((end_char_index-start_char_index+1)/3))+2;
+        struct associations_chain ac_arr[5];
         
+        int num_associations_chains_received=0;
         for(int l=0;l<5;l++){
           struct char_state_association *associations[ct];
           int associations_received=get_state_spans(state_list[l], input_str, start_char_index, end_char_index, associations);
-        }     
+          if(associations_received>0){
+            struct associations_chain ac={associations_received,associations};
+            ac_arr[num_associations_chains_received]=ac;
+            num_associations_chains_received+=1;            
+          }
+        }
+        mass_associations_chain_index[is_working[i]].association_chain_array=ac_arr;  
+        mass_associations_chain_index[is_working[i]].chain_count=num_associations_chains_received;
       }
+      
     }
   
   int prev_chosen_association=-1;
@@ -196,6 +254,40 @@ int main(int argc,char *argv[]) {
   for(int x=0;x<string_size+1;x++){
     output_str[x]=' ';
   }
+  
+  
+  struct state *last_state;
+  int prev_chain_continues_till_end=-1;//index for the end of the last incomplete dfa
+  //if one of the matches in the previous chain links into the current one
+  
+  for(int i=0; i<spaces_needed;i++){
+    
+    int chain_count= mass_associations_chain_index[spaces_needed].chain_count;
+    if(chain_count>0){
+      
+      if(prev_chain_continues_till_end==-1){
+        //we are looking for a start state in our present chain
+      }
+      else{
+        //we are looking for one of the sequels to the last state
+      }
+      
+      
+    }
+    else{
+      if(prev_chain_continues_till_end!=-1 && last_state!=&accept_state){
+        //we must wipe out the last dfa
+        int counter=prev_chain_continues_till_end;
+        while(counter!=-1||output_str[counter]!=' '){
+          output_str[counter]=' ';//wipe backwards
+          counter=counter-1;
+        }
+      }
+      prev_chain_continues_till_end=-1;//make it known to the next iteration that previous chain does not need to be checked
+    }
+  
+  }
+  
   
     
   printf("%s\n",output_str);
