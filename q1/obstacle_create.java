@@ -4,7 +4,7 @@ public class obstacle_create implements Runnable{
   static int obstacles_created=0; 
   static int obstacle_count=20;
   static void create_all(int thread_count){
-    
+     
 
     Thread[] th_arr=new Thread[thread_count];
     
@@ -14,7 +14,7 @@ public class obstacle_create implements Runnable{
     }
     for(int i=0;i<thread_count;i++){
       try{
-        th_arr[i].join();
+        th_arr[i].join();//create multithreaded obstacles
       }
       catch(InterruptedException err){
         
@@ -24,7 +24,7 @@ public class obstacle_create implements Runnable{
     
   }
   
-  static synchronized boolean obtain_obstacle(){
+  static synchronized boolean obtain_obstacle(){//create obstacle
     if(obstacles_created<obstacle_count){
       obstacles_created+=1;
       return true;
@@ -39,7 +39,7 @@ public class obstacle_create implements Runnable{
   
   public void run(){
     while(obtain_obstacle()){
-      tile.generate_obstacle();
+      tile.generate_obstacle();//use tile function to generate obstacle
     }    
   }
 }
