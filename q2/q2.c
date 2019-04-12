@@ -13,6 +13,7 @@ struct state{
   struct transition *transitions[2];
   int length;
   int is_accept_state;
+  char name[20];
 };
 
 struct char_state_association{
@@ -35,7 +36,7 @@ struct state bottom_mid_state;
 struct state decimal_state;
 struct state accept_state;
 
-int check_transition_possible(struct state *current_state, int char_ascii, struct state *result){
+int check_transition_possible(struct state *current_state, int char_ascii, struct state **result){
 
   for(int i=0;i<current_state->length;i++){
     if(
@@ -44,7 +45,7 @@ int check_transition_possible(struct state *current_state, int char_ascii, struc
       current_state->transitions[i]->end_code_ascii>=char_ascii
     )
     {
-      *result=*(current_state->transitions[i]->next_state);
+      *result=(current_state->transitions[i]->next_state);
       return 1;
     }
   }
@@ -58,10 +59,11 @@ int get_state_spans(struct state *start_from_state, char *string, int start_pos,
   int currently_joining=0;
   struct char_state_association *current_csa;
   int associations_length=0;
+  struct state *double_ptr[1];
   for(int t=start_pos; t<end_pos;t++){
     struct state *recv_state; 
-    recv_state=start_from_state;
-    if(check_transition_possible(curr_state,(int)string[t],recv_state)==1){
+    if(check_transition_possible(curr_state,(int)string[t],double_ptr)==1){
+      recv_state=*double_ptr;
       if(currently_joining==0){//this is the start of a new DFA recognised string
         currently_joining=1;
         struct char_state_association csa={t,t,curr_state,recv_state};
@@ -76,16 +78,15 @@ int get_state_spans(struct state *start_from_state, char *string, int start_pos,
       }
       curr_state=recv_state;
       
-      return 0;
     }
     else{
+      
       if(curr_state==&accept_state){//check if the last state was the accept state, then publish it in the return associations list
         associations[associations_length]=current_csa;
         associations_length+=1;
       }
       currently_joining=0;//reset DFA for next char
       curr_state=&start_state;//reset to DFA's overall start state
-      
     }
   }
   return associations_length;
@@ -94,33 +95,27 @@ int get_state_spans(struct state *start_from_state, char *string, int start_pos,
 
 struct state *state_list[5];
 
-int get_eligible_states(int char_ascii, struct state *results){
-  //gets list of all possible states for a given character to be in
-  int count=0;
-  for(int i=0;i<5;i++){
-    //results[count]=&start_state;
-    
-    if(check_transition_possible(state_list[i], char_ascii, &results[count])==1){
-      count+=1;
-    }
-  }
-  return count;  
-}
+
 
 
 int main(int argc,char *argv[]) {
   //link all states with their transitions
   start_state.transitions[0]=&trans_top_left;
   start_state.transitions[1]=&trans_bottom_left;
+  strcpy(start_state.name,"start_state");
   start_state.length=2;
   top_mid_state.transitions[0]=&trans_decimal;
+  strcpy(top_mid_state.name,"top_mid_state");
   top_mid_state.length=1;
   bottom_mid_state.transitions[0]=&trans_decimal;
   bottom_mid_state.transitions[1]=&trans_bottom_left_self;
+  strcpy(bottom_mid_state.name,"bottom_mid_state");
   bottom_mid_state.length=2;
   decimal_state.transitions[0]=&trans_accept;
+  strcpy(decimal_state.name,"decimal_state");
   decimal_state.length=1;
   accept_state.transitions[0]=&trans_accept;
+  strcpy(accept_state.name,"accept_state");
   accept_state.length=1;
   accept_state.is_accept_state=1;
   
@@ -177,13 +172,11 @@ int main(int argc,char *argv[]) {
           
           input_str[nav]=' ';
         }
-        //struct state results[5];
-        //get_eligible_states((int)input_str[nav], results);
         
       }
       
       
-      if(i==0){        
+      if(i==0){
         int ct=(int)(((end_char_index-start_char_index+1)/3))+2;
         struct char_state_association *associations[ct];
         int associations_received=get_state_spans(&start_state, input_str, start_char_index, end_char_index, associations);
@@ -193,6 +186,9 @@ int main(int argc,char *argv[]) {
         association_chains_per_thread[0]=0;
         if(associations_received>0){
           association_chains_per_thread[0]=1;
+          int ac[1];
+          ac[0]=associations_received;
+          associations_in_chain[0]=ac;
         }
         
       }
@@ -201,10 +197,14 @@ int main(int argc,char *argv[]) {
         struct char_state_association **associations_list[5];
         
         int count=0;
+        int ac[ct];
+        
+        
         for(int l=0;l<5;l++){
           struct char_state_association *associations[ct];
           int associations_received=get_state_spans(state_list[l], input_str, start_char_index, end_char_index, associations);
           if(associations_received>0){
+            ac[count]=associations_received;
             associations_list[count++]=associations;
           }
         }
@@ -212,13 +212,18 @@ int main(int argc,char *argv[]) {
         
         association_chains_per_thread[i]=0;
         if(count>0){
-          association_chains_per_thread[i]=1;
+          association_chains_per_thread[i]=count;
+          associations_in_chain[i]=ac;
         }        
       }
     }
   
   int prev_chosen_association=-1;
   char * output_str=malloc(max_chars+1);
+  for(int x=0;x<string_size+1;x++){
+    output_str[x]=' ';
+  }
+  
   for(int i=0;i<total_threads;i++){
     int start_char_index=(i*string_size)/total_threads;
     int end_char_index=((i+1)*string_size)/total_threads;
@@ -227,23 +232,36 @@ int main(int argc,char *argv[]) {
       end_char_index+=delta;
     }
     if(prev_chosen_association<0&&association_chains_per_thread[i]>0){
-      prev_chosen_association=0;//we'll simply pick the one with the start state as the initial state
-      //now we do the appropriate deletions in the string
-      for(int g=0;g<[i][0];g++){
-        output_str[]=input_str[];
+      //we'll simply pick the one with the start state as the initial state
+      //check if it is indeed start state
+      printf("choice a\n");
+      if(!((associations_list_by_thread[i][0][0]->state_start)==&start_state)){
+        continue;
+      }
+      
+      prev_chosen_association=0;
+      //now we do the appropriate additions in the string
+
+      for(int dfa_ct=0;dfa_ct<associations_in_chain[i][0];dfa_ct++){
+        for(int char_pos=associations_list_by_thread[i][0][associations_in_chain[i][0]]->position_start;char_pos<=associations_list_by_thread[i][0][associations_in_chain[i][0]]->position_end;char_pos++){
+          output_str[char_pos]=input_str[char_pos];
+        }        
       }
     }
     else if(association_chains_per_thread[i]>0&&prev_chosen_association>=0){
+      printf("choice b\n");
       //we see that if any one of our present dfas matches up with the ending of an old one
       //if it does, we pick that
       //else we pick the one with start state if it exists
       //else we set previous association to -1
     }
     else if(association_chains_per_thread[i]==0&&prev_chosen_association>=0){
+      printf("choice c\n");
       //we must delete the incomplete dfa matches from last our match (if eligible)
       prev_chosen_association=-1;
     }
     else{
+      printf("choice d\n");
       //neither last piece nor this one has any matches so replace everything with whitespace
       prev_chosen_association=-1;
     }
@@ -252,7 +270,7 @@ int main(int argc,char *argv[]) {
     
   printf("%s\n",output_str);
     
-  
+  printf("name of the start state now is %s\n",start_state.name);
   
 }
 
