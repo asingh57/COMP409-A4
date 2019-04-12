@@ -17,21 +17,21 @@ struct state{
 };
 
 struct char_state_association{
-  int position_start;
-  int position_end;
+  int position_start;//char at position start satisfies state start 
+  int position_end;// char at position end satisfies state end
   struct state *state_start;
   struct state *state_end;
 };
 
 struct associations_chain{
   int association_count;
-  struct char_state_association **association_array;  
+  struct char_state_association association_array[20];  
 };
 
 struct associations_chains_per_index{
   int index;
   int chain_count;
-  struct associations_chain *association_chain_array;  
+  struct associations_chain association_chain_array[5];  
 };
 
 
@@ -66,11 +66,11 @@ int check_transition_possible(struct state *current_state, int char_ascii, struc
 }
 
 
-int get_state_spans(struct state *start_from_state, char *string, int start_pos, int end_pos, struct char_state_association **associations){
+int get_state_spans(struct state *start_from_state, char *string, int start_pos, int end_pos, struct char_state_association *associations){
   struct state *curr_state;
   curr_state= start_from_state;
   int currently_joining=0;
-  struct char_state_association *current_csa;
+  struct char_state_association current_csa;
   int associations_length=0;
   struct state *double_ptr[1];
   for(int t=start_pos; t<end_pos;t++){
@@ -80,10 +80,10 @@ int get_state_spans(struct state *start_from_state, char *string, int start_pos,
       if(currently_joining==0){//this is the start of a new DFA recognised string
         currently_joining=1;
         struct char_state_association csa={t,t,curr_state,recv_state};
-        current_csa=&csa;
+        current_csa=csa;
       }
-      current_csa->position_end=t;
-      current_csa->state_end=recv_state;
+      current_csa.position_end=t;
+      current_csa.state_end=recv_state;
       
       if(t==end_pos-1){//if last char, publish it in return associations list
         associations[associations_length]=current_csa;
@@ -148,7 +148,6 @@ int main(int argc,char *argv[]) {
   int max_chars=1000;
   char * input_str=malloc(max_chars+1);
   strcpy(input_str, "This 1 1.1.1.1 is _1.02 an input.str 2.11s");
-  printf("%s\n",input_str);
 
   int string_size=strlen(input_str);
   
@@ -181,7 +180,7 @@ int main(int argc,char *argv[]) {
   struct associations_chains_per_index mass_associations_chain_index[spaces_needed];
   
   
-  #pragma omp parallel for
+  #pragma omp parallel for shared(mass_associations_chain_index)
     for (int i=0;i<total_threads;i++) {
       int start_char_index=(i*string_size)/total_threads;
       int end_char_index=((i+1)*string_size)/total_threads;
@@ -211,66 +210,147 @@ int main(int argc,char *argv[]) {
         
         int ct=(int)(((end_char_index-start_char_index+1)/3))+2;        
         
-        
-        struct char_state_association *associations[ct];
+        struct char_state_association associations[ct];
         int associations_received=get_state_spans(&start_state, input_str, start_char_index, end_char_index, associations);
         
         if(associations_received>0){
-          struct associations_chain ac={associations_received,associations};
+          struct associations_chain ac;
+          printf("name of state sent %s\n",start_state.name);
+          ac.association_count=associations_received;
+          for(int kk = 0; kk<associations_received;kk++){
+              ac.association_array[kk]=associations[kk];
+              printf("position start %d\n",ac.association_array[kk].position_start);
+              printf("position end %d\n",ac.association_array[kk].position_end);
+            }
+          //={associations_received,associations};
           mass_associations_chain_index[is_working[i]].chain_count=1;
-          struct associations_chain ac_arr[1];
-          ac_arr[0]=ac;
-          mass_associations_chain_index[is_working[i]].association_chain_array=ac_arr;  
+          mass_associations_chain_index[is_working[i]].association_chain_array[0]=ac; 
         }
         else{
           mass_associations_chain_index[is_working[i]].chain_count=0;
         }
-        
+        mass_associations_chain_index[is_working[i]].index=start_char_index;
         
         
       }
       else if(is_working[i]>=0){
         int ct=(int)(((end_char_index-start_char_index+1)/3))+2;
-        struct associations_chain ac_arr[5];
         
         int num_associations_chains_received=0;
         for(int l=0;l<5;l++){
-          struct char_state_association *associations[ct];
+          struct associations_chain ac;
+          struct char_state_association associations[ct];
           int associations_received=get_state_spans(state_list[l], input_str, start_char_index, end_char_index, associations);
           if(associations_received>0){
-            struct associations_chain ac={associations_received,associations};
-            ac_arr[num_associations_chains_received]=ac;
-            num_associations_chains_received+=1;            
+            printf("name of state sent %s\n",state_list[l]->name);
+            
+            
+            ac.association_count=associations_received;
+            for(int kk = 0; kk<associations_received;kk++){
+              ac.association_array[kk]=associations[kk];
+              printf("position start %d\n",ac.association_array[kk].position_start);
+              printf("position end %d\n",ac.association_array[kk].position_end);
+            }
+            mass_associations_chain_index[is_working[i]].association_chain_array[num_associations_chains_received]=ac;  
+            num_associations_chains_received+=1;              
           }
         }
-        mass_associations_chain_index[is_working[i]].association_chain_array=ac_arr;  
+        
         mass_associations_chain_index[is_working[i]].chain_count=num_associations_chains_received;
+        mass_associations_chain_index[is_working[i]].index=start_char_index;
       }
       
     }
+
   
   int prev_chosen_association=-1;
   char * output_str=malloc(max_chars+1);
   for(int x=0;x<string_size+1;x++){
     output_str[x]=' ';
   }
-  
+   
   
   struct state *last_state;
   int prev_chain_continues_till_end=-1;//index for the end of the last incomplete dfa
   //if one of the matches in the previous chain links into the current one
   
-  for(int i=0; i<spaces_needed;i++){
+  for(int i=0; i<total_threads;i++){
     
-    int chain_count= mass_associations_chain_index[spaces_needed].chain_count;
+    int chain_count= mass_associations_chain_index[is_working[i]].chain_count;
     if(chain_count>0){
-      
-      if(prev_chain_continues_till_end==-1){
-        //we are looking for a start state in our present chain
-      }
-      else{
+      struct state *search_state[2];
+      int next_states_possible=0;
+      if(prev_chain_continues_till_end!=-1){
         //we are looking for one of the sequels to the last state
+        printf("previous chain continues, %s\n",last_state->name);
+        printf("last index, %d\n",prev_chain_continues_till_end);
+        for(int x=0;x<last_state->length;x++){
+          search_state[x]=last_state->transitions[x]->next_state;
+          next_states_possible+=1;
+        }
       }
+      int continuing_chain_found_index=-1;
+      int new_start_chain_found_index=-1;
+      
+      for(int chain_number=0;chain_number<chain_count;chain_number++){
+        //for(int q=0;q<mass_associations_chain_index[i].association_chain_array[chain_number].association_count;q++){
+          
+          
+          for(int r=0;r<next_states_possible;r++){
+            if(mass_associations_chain_index[is_working[i]].association_chain_array[chain_number].association_array[0].position_start==mass_associations_chain_index[is_working[i]].index
+                &&
+              mass_associations_chain_index[is_working[i]].association_chain_array[chain_number].association_array[0].state_start==search_state[r]
+            ){
+              continuing_chain_found_index=chain_number;
+            }
+          }
+          
+          if(mass_associations_chain_index[is_working[i]].association_chain_array[chain_number].association_array[0].state_start==&start_state){
+            new_start_chain_found_index=chain_number;
+          }
+        //}
+      }
+      if(continuing_chain_found_index==-1&&prev_chain_continues_till_end!=-1&&last_state!=&accept_state){
+        int counter=prev_chain_continues_till_end;
+        while(counter>=0&&output_str[counter]!=' '){
+          output_str[counter]=' ';//wipe backwards
+          counter=counter-1;
+        }
+      }
+      if(continuing_chain_found_index==-1&&new_start_chain_found_index!=-1){
+        continuing_chain_found_index=new_start_chain_found_index;
+      }
+      
+      if(continuing_chain_found_index!=-1){
+        printf("found chain index %d\n",continuing_chain_found_index);
+        //write to output
+        
+        for(int f=0;f<mass_associations_chain_index[is_working[i]].association_chain_array[continuing_chain_found_index].association_count;f++){
+          printf("association number %d\n",f);
+          printf("start %d\n",mass_associations_chain_index[is_working[i]].association_chain_array[continuing_chain_found_index].association_array[f].position_start);
+          printf("end %d\n",mass_associations_chain_index[is_working[i]].association_chain_array[continuing_chain_found_index].association_array[f].position_end);
+          for(int c=mass_associations_chain_index[is_working[i]].association_chain_array[continuing_chain_found_index].association_array[f].position_start;
+          c<=mass_associations_chain_index[is_working[i]].association_chain_array[continuing_chain_found_index].association_array[f].position_end;
+          c++){
+            printf("thread num %d\n",i);
+            printf("index at %d\n",c);
+            
+            output_str[c]=input_str[c];
+            int start_char_index=(i*string_size)/total_threads;
+            int end_char_index=((i+1)*string_size)/total_threads;
+            if(c==end_char_index-1){
+              //now set the end for the next iteration using prev_chain_continues_till_end if it goes till the last character. also set last_state
+              prev_chain_continues_till_end=c;
+              last_state=mass_associations_chain_index[is_working[i]].association_chain_array[continuing_chain_found_index].association_array[f].state_end;
+            }
+          }
+          
+        }
+        
+        
+        
+      }
+      
       
       
     }
@@ -278,9 +358,10 @@ int main(int argc,char *argv[]) {
       if(prev_chain_continues_till_end!=-1 && last_state!=&accept_state){
         //we must wipe out the last dfa
         int counter=prev_chain_continues_till_end;
-        while(counter!=-1||output_str[counter]!=' '){
+        while(counter>=0&&output_str[counter]!=' '){
           output_str[counter]=' ';//wipe backwards
           counter=counter-1;
+          
         }
       }
       prev_chain_continues_till_end=-1;//make it known to the next iteration that previous chain does not need to be checked
@@ -291,8 +372,7 @@ int main(int argc,char *argv[]) {
   
     
   printf("%s\n",output_str);
-    
-  
+
 }
 
 
